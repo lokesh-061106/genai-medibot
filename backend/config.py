@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     GROQ_API_KEY: Optional[str] = None
+    PINECONE_API_KEY: Optional[str] = None
+    PINECONE_INDEX_NAME: str = "medibot"
+    HF_TOKEN: Optional[str] = None
     TWILIO_ACCOUNT_SID: Optional[str] = None
     TWILIO_AUTH_TOKEN: Optional[str] = None
     @property

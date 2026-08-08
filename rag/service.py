@@ -1,29 +1,36 @@
 import os
 from typing import List
 from dotenv import load_dotenv
-from langchain_chroma import Chroma
+from langchain_pinecone import PineconeVectorStore
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from pypdf import PdfReader
+from pinecone import Pinecone
 
 from rag.prompt import medical_prompt_template
 
-# Load environment variables (e.g. GROQ_API_KEY)
+# Load environment variables
 load_dotenv()
 
 class MedicalRAGService:
-    def __init__(self, persist_directory: str = "chroma_db"):
-        self.persist_directory = persist_directory
-        self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    def __init__(self):
+        # We use the Inference API so it doesn't download weights locally (required for Vercel)
+        self.embeddings = HuggingFaceEndpointEmbeddings(
+            model="sentence-transformers/all-MiniLM-L6-v2",
+            huggingfacehub_api_token=os.environ.get("HF_TOKEN")
+        )
         self.llm = ChatGroq(model_name="llama3-8b-8192", temperature=0)
-        self.vectorstore = Chroma(
-            collection_name="medical_docs",
-            embedding_function=self.embeddings,
-            persist_directory=self.persist_directory
+        
+        # Initialize Pinecone
+        index_name = os.environ.get("PINECONE_INDEX_NAME", "medibot")
+        self.vectorstore = PineconeVectorStore(
+            index_name=index_name,
+            embedding=self.embeddings,
+            pinecone_api_key=os.environ.get("PINECONE_API_KEY")
         )
         self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 4})
         
@@ -64,8 +71,13 @@ class MedicalRAGService:
         return len(documents)
 
     def query(self, question: str) -> str:
-        # The qa_chain will retrieve documents and pass them to the LLM with the strict prompt
         return self.qa_chain.invoke(question)
 
-# Singleton instance
-rag_service = MedicalRAGService()
+# Singleton instance (Lazy initialized to prevent Vercel build crashes without API keys)
+_rag_service = None
+
+def get_rag_service():
+    global _rag_service
+    if _rag_service is None:
+        _rag_service = MedicalRAGService()
+    return _rag_service
